@@ -2,11 +2,6 @@ name: Publish to VMG repository
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/publish-to-vmg.yml
 
 permissions:
   contents: read
