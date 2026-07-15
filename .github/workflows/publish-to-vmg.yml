@@ -1,0 +1,71 @@
+name: Publish to VMG repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-pull-request:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_REPO: dev-vmgroupe/performance-marketing-simulator
+      GH_TOKEN: ${{ secrets.VMG_ORG_REPO_TOKEN }}
+
+    steps:
+      - name: Check out simulator source
+        uses: actions/checkout@v4
+
+      - name: Validate destination token
+        shell: bash
+        run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::Add the VMG_ORG_REPO_TOKEN Actions secret before running this workflow."
+            exit 1
+          fi
+
+      - name: Copy site and create destination pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh auth setup-git
+
+          workdir="${RUNNER_TEMP}/performance-marketing-simulator"
+          git clone "https://github.com/${TARGET_REPO}.git" "${workdir}"
+          cd "${workdir}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git show-ref --verify --quiet refs/remotes/origin/main; then
+            git checkout -B main origin/main
+          else
+            git switch --orphan bootstrap-main
+            git branch -M main
+            git commit --allow-empty -m "Initialize repository"
+            git push --set-upstream origin main
+          fi
+
+          branch="automation/sync-simulator-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git checkout -b "${branch}"
+
+          cp "${GITHUB_WORKSPACE}/index.html" ./index.html
+          cp "${GITHUB_WORKSPACE}/.nojekyll" ./.nojekyll
+          git add index.html .nojekyll
+
+          if git diff --cached --quiet; then
+            echo "No site changes to publish."
+            exit 0
+          fi
+
+          git commit -m "Update performance marketing simulator"
+          git push --set-upstream origin "${branch}"
+
+          gh pr create \
+            --repo "${TARGET_REPO}" \
+            --base main \
+            --head "${branch}" \
+            --title "Update performance marketing simulator" \
+            --body "Copies the latest simulator from ${GITHUB_REPOSITORY} at source commit ${GITHUB_SHA}."
